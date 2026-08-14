@@ -13,7 +13,15 @@ const {
     ListToolsRequestSchema,
 } = require('@modelcontextprotocol/sdk/types.js');
 
-const { searchAllSources, scrapeCarscom, scrapeAutotrader, scrapeKBB } = require('./scraper.js');
+const {
+    searchAllSources,
+    scrapeCarscom,
+    scrapeAutotrader,
+    scrapeKBB,
+    scrapeAutotraderUK,
+    scrapeMotorsUK,
+    scrapeCinch,
+} = require('./scraper.js');
 
 // Create server instance
 const server = new Server(
@@ -34,7 +42,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         tools: [
             {
                 name: 'search_car_deals',
-                description: 'Search for car deals across multiple sources (Cars.com, Autotrader, KBB). Returns listings with prices, mileage, deal ratings, and links.',
+                description: 'Search for car deals across multiple sources. US: Cars.com, Autotrader, KBB. UK: Autotrader UK, Motors.co.uk, Cinch. Returns listings with prices, mileage, deal ratings, and links.',
                 inputSchema: {
                     type: 'object',
                     properties: {
@@ -46,9 +54,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                             type: 'string',
                             description: 'Car model (e.g., Camry, Civic, F-150)',
                         },
+                        country: {
+                            type: 'string',
+                            enum: ['US', 'UK'],
+                            description: 'Country to search in. Default: US',
+                        },
                         zip: {
                             type: 'string',
-                            description: 'ZIP code for location-based search (default: 90210)',
+                            description: 'ZIP code (US) or postcode (UK) for location-based search (default: 90210 for US, SW1A 1AA for UK)',
                         },
                         yearMin: {
                             type: 'integer',
@@ -73,7 +86,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                         sources: {
                             type: 'array',
                             items: { type: 'string' },
-                            description: 'Sources to search: "cars.com", "autotrader", "kbb". Default: all',
+                            description: 'Sources to search. US: "cars.com", "autotrader", "kbb". UK: "autotrader-uk", "motors", "cinch". Default: cars.com (US) or autotrader-uk (UK)',
                         },
                         oneOwner: {
                             type: 'boolean',
@@ -101,22 +114,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === 'search_car_deals') {
         try {
+            const country = (args.country || 'US').toUpperCase();
+            const defaultZip = country === 'UK' ? 'SW1A 1AA' : '90210';
             const params = {
                 make: args.make,
                 model: args.model,
-                zip: args.zip || '90210',
+                country,
+                zip: args.zip || defaultZip,
                 yearMin: args.yearMin,
                 yearMax: args.yearMax,
                 priceMax: args.priceMax,
                 mileageMax: args.mileageMax,
-                // CarFax history filters
+                // CarFax history filters (US only)
                 oneOwner: args.oneOwner,
                 noAccidents: args.noAccidents,
                 personalUse: args.personalUse,
             };
             const maxResults = args.maxResults || 10;
-            // Default to just cars.com for reliability
-            const sources = args.sources || ['cars.com'];
+            // Default to just one source per country for reliability
+            const defaultSources = country === 'UK' ? ['autotrader-uk'] : ['cars.com'];
+            const sources = args.sources || defaultSources;
 
             console.error(`[MCP] Searching for ${params.make} ${params.model} in ${params.zip}`);
             console.error(`[MCP] Sources: ${sources.join(', ')}, Max: ${maxResults}`);
@@ -172,6 +189,51 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 );
             }
 
+            if (sources.includes('autotrader-uk')) {
+                console.error('[MCP] Starting Autotrader UK scraper...');
+                scraperPromises.push(
+                    scrapeAutotraderUK(params, maxResults)
+                        .then(listings => {
+                            console.error(`[MCP] Autotrader UK returned ${listings.length} listings`);
+                            return { source: 'Autotrader UK', listings };
+                        })
+                        .catch(err => {
+                            console.error(`[MCP] Autotrader UK error: ${err.message}`);
+                            return { source: 'Autotrader UK', error: err.message, listings: [] };
+                        })
+                );
+            }
+
+            if (sources.includes('motors')) {
+                console.error('[MCP] Starting Motors.co.uk scraper...');
+                scraperPromises.push(
+                    scrapeMotorsUK(params, maxResults)
+                        .then(listings => {
+                            console.error(`[MCP] Motors.co.uk returned ${listings.length} listings`);
+                            return { source: 'Motors.co.uk', listings };
+                        })
+                        .catch(err => {
+                            console.error(`[MCP] Motors.co.uk error: ${err.message}`);
+                            return { source: 'Motors.co.uk', error: err.message, listings: [] };
+                        })
+                );
+            }
+
+            if (sources.includes('cinch')) {
+                console.error('[MCP] Starting Cinch scraper...');
+                scraperPromises.push(
+                    scrapeCinch(params, maxResults)
+                        .then(listings => {
+                            console.error(`[MCP] Cinch returned ${listings.length} listings`);
+                            return { source: 'Cinch', listings };
+                        })
+                        .catch(err => {
+                            console.error(`[MCP] Cinch error: ${err.message}`);
+                            return { source: 'Cinch', error: err.message, listings: [] };
+                        })
+                );
+            }
+
             const results = await Promise.all(scraperPromises);
             console.error(`[MCP] All scrapers completed`);
 
@@ -190,7 +252,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             if (params.yearMin || params.yearMax) {
                 output += ` (${params.yearMin || 'any'}-${params.yearMax || 'any'})`;
             }
-            if (params.priceMax) output += ` | Max Price: $${params.priceMax.toLocaleString()}`;
+            const currencySymbol = country === 'UK' ? '£' : '$';
+            if (params.priceMax) output += ` | Max Price: ${currencySymbol}${params.priceMax.toLocaleString()}`;
             if (params.mileageMax) output += ` | Max Mileage: ${params.mileageMax.toLocaleString()}`;
 
             // Show active CarFax filters

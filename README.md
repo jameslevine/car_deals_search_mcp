@@ -1,10 +1,12 @@
 # Car Deals Search MCP
 
-> **Search used car listings from Cars.com, Autotrader, and KBB with AI assistants**
+> **Search used car listings from Cars.com, Autotrader, KBB (US) and Autotrader UK, Motors.co.uk, Cinch (UK) with AI assistants**
 
-An MCP (Model Context Protocol) server that aggregates and searches car listings from multiple sources. Scrapes listings in parallel, extracts price, mileage, dealer info, and applies optional CARFAX-style filters (1-owner, no accidents, personal use).
+An MCP (Model Context Protocol) server that aggregates and searches car listings from multiple sources across the US and UK. Scrapes listings in parallel, extracts price, mileage, dealer info, and applies optional CARFAX-style filters (1-owner, no accidents, personal use) for US sources.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+> This is a fork of [SiddarthaKoppaka/car_deals_search_mcp](https://github.com/SiddarthaKoppaka/car_deals_search_mcp), extended with UK marketplace support (Autotrader UK, Motors.co.uk, Cinch).
 
 ---
 
@@ -20,7 +22,7 @@ An MCP (Model Context Protocol) server that aggregates and searches car listings
 
 ```bash
 # Clone the repository
-git clone https://github.com/SiddarthaKoppaka/car_deals_search_mcp.git
+git clone https://github.com/jameslevine/car_deals_search_mcp.git
 cd car_deals_search_mcp
 
 # Install dependencies (includes Puppeteer)
@@ -54,7 +56,7 @@ Configure your MCP client (Claude Desktop, VS Code, GitHub Copilot, etc.) to use
 # Run the test command
 npm test
 
-# Or test manually with a specific search
+# Or test manually with a specific search (US)
 node -e "
 const { scrapeCarscom } = require('./src/scraper.js');
 scrapeCarscom({
@@ -65,14 +67,26 @@ scrapeCarscom({
   personalUse: true
 }, 5).then(listings => listings.forEach(l => console.log(l.format())));
 "
+
+# Or test a UK search
+node -e "
+const { scrapeAutotraderUK } = require('./src/scraper.js');
+scrapeAutotraderUK({
+  make: 'Toyota',
+  model: 'Corolla',
+  zip: 'SW1A 1AA',
+  priceMax: 15000
+}, 5).then(listings => listings.forEach(l => console.log(l.format())));
+"
 ```
 
 ---
 
 ## ✨ Features
 
-- **Multi-source aggregation**: Search Cars.com, Autotrader, and KBB simultaneously
-- **Smart filtering**: CARFAX-style filters (1-Owner, No Accidents, Personal Use)
+- **Multi-source aggregation**: Search Cars.com, Autotrader, and KBB (US), or Autotrader UK, Motors.co.uk, and Cinch (UK) simultaneously
+- **US & UK support**: Pass `country: "UK"` to search UK marketplaces with a postcode instead of a ZIP code
+- **Smart filtering**: CARFAX-style filters (1-Owner, No Accidents, Personal Use) for US sources
 - **Deal ratings**: Heuristic-based deal quality assessment
 - **Parallel scraping**: Fast concurrent queries across sources
 - **Stealth mode**: Puppeteer with anti-bot detection techniques
@@ -81,11 +95,21 @@ scrapeCarscom({
 
 ## 📊 Supported Sources
 
+**US** (`country: "US"`, default)
+
 | Source     | Price | Mileage | Deal Rating | Dealer Info | CARFAX Filters |
 |------------|:-----:|:-------:|:-----------:|:-----------:|:--------------:|
 | Cars.com   | ✅    | ✅      | ✅          | ✅          | ✅             |
 | Autotrader | ✅    | ✅      | ⚠️ Limited   | ✅          | ⚠️ Limited     |
 | KBB        | ✅    | ✅      | ✅          | ⚠️ Limited   | ⚠️ Limited     |
+
+**UK** (`country: "UK"`)
+
+| Source        | Price | Mileage | Location | Notes |
+|---------------|:-----:|:-------:|:--------:|-------|
+| Autotrader UK | ✅    | ✅      | ✅       | Default UK source; searched by postcode |
+| Motors.co.uk  | ✅    | ✅ (approx.) | ✅ (distance) | Mileage shown rounded (e.g. "41.2k") |
+| Cinch         | ✅    | ✅      | ❌       | Nationwide delivery retailer, no postcode/distance |
 
 ---
 
@@ -97,20 +121,21 @@ scrapeCarscom({
 |--------------|----------|----------|-------------|
 | `make`       | string   | ✅       | Car manufacturer (e.g., "Toyota", "Honda") |
 | `model`      | string   | ✅       | Car model (e.g., "Camry", "Accord") |
-| `zip`        | string   | ❌       | ZIP code for local search (default: "90210") |
+| `country`    | string   | ❌       | `"US"` or `"UK"` (default: `"US"`) |
+| `zip`        | string   | ❌       | ZIP code (US) or postcode (UK) (default: "90210" for US, "SW1A 1AA" for UK) |
 | `yearMin`    | integer  | ❌       | Minimum model year |
 | `yearMax`    | integer  | ❌       | Maximum model year |
-| `priceMax`   | integer  | ❌       | Maximum price in USD |
+| `priceMax`   | integer  | ❌       | Maximum price, in USD for US searches or GBP for UK searches |
 | `mileageMax` | integer  | ❌       | Maximum mileage |
 | `maxResults` | integer  | ❌       | Max results per source (default: 10) |
-| `sources`    | array    | ❌       | Sources to query: `["cars.com","autotrader","kbb"]` (default: all) |
-| `oneOwner`   | boolean  | ❌       | Filter for CARFAX 1-owner vehicles only |
-| `noAccidents`| boolean  | ❌       | Filter for no accidents reported |
-| `personalUse`| boolean  | ❌       | Filter for personal use only (not rental/fleet) |
+| `sources`    | array    | ❌       | US: `["cars.com","autotrader","kbb"]`. UK: `["autotrader-uk","motors","cinch"]`. (default: `cars.com` for US, `autotrader-uk` for UK) |
+| `oneOwner`   | boolean  | ❌       | US only. Filter for CARFAX 1-owner vehicles only |
+| `noAccidents`| boolean  | ❌       | US only. Filter for no accidents reported |
+| `personalUse`| boolean  | ❌       | US only. Filter for personal use only (not rental/fleet) |
 
-### Example Response
+### Example Response (US)
 
-```
+```text
 🚗 2021 Toyota Camry XSE
    💰 Price: $23,491
    📏 Mileage: 52,649 mi
@@ -119,6 +144,17 @@ scrapeCarscom({
    🏪 Dealer: Valencia BMW
    🌐 Source: Cars.com
    🔗 https://www.cars.com/vehicledetail/...
+```
+
+### Example Response (UK)
+
+```text
+Toyota Corolla 1.8 VVT-h Icon CVT Euro 6 (s/s) 5dr
+  Price: £14,309
+  Mileage: 56,847 miles
+  Location: Available from Portsmouth (62 miles)
+  Source: Autotrader UK
+  https://www.autotrader.co.uk/car-details/...
 ```
 
 ---
@@ -184,6 +220,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ## 🔗 Links
 
-- **Repository**: https://github.com/SiddarthaKoppaka/car_deals_search_mcp
-- **Issues**: https://github.com/SiddarthaKoppaka/car_deals_search_mcp/issues
-- **MCP Protocol**: https://modelcontextprotocol.io
+- **Repository**: [github.com/jameslevine/car_deals_search_mcp](https://github.com/jameslevine/car_deals_search_mcp)
+- **Issues**: [github.com/jameslevine/car_deals_search_mcp/issues](https://github.com/jameslevine/car_deals_search_mcp/issues)
+- **Original project**: [github.com/SiddarthaKoppaka/car_deals_search_mcp](https://github.com/SiddarthaKoppaka/car_deals_search_mcp)
+- **MCP Protocol**: [modelcontextprotocol.io](https://modelcontextprotocol.io)

@@ -1,12 +1,12 @@
 {
   "mcpVersion": "1.0.0",
-  "id": "SiddarthaKoppaka/car_deals_search_mcp",
+  "id": "jameslevine/car_deals_search_mcp",
   "name": "car-deals-search-mcp",
   "displayName": "Car Deals (MCP)",
   "version": "1.0.0",
-  "description": "Search used car listings from Cars.com, Autotrader and KBB. MCP-compatible server.",
-  "author": "SiddarthaKoppaka",
-  "homepage": "https://github.com/SiddarthaKoppaka/car_deals_search_mcp",
+  "description": "Search used car listings from Cars.com, Autotrader and KBB (US), or Autotrader UK, Motors.co.uk and Cinch (UK). MCP-compatible server.",
+  "author": "James Levine (fork of SiddarthaKoppaka/car_deals_search_mcp)",
+  "homepage": "https://github.com/jameslevine/car_deals_search_mcp",
   "icon": "assets/icon.svg",
   "license": "MIT",
   "entry": {
@@ -24,12 +24,13 @@
     "network",
     "filesystem"
   ],
-  "tags": ["scraper","cars","mcp","search"],
+  "tags": ["scraper","cars","mcp","search","uk","us"],
   "schema": {
     "tool": "search_car_deals",
     "parameters": {
       "make": { "type": "string", "required": true },
       "model": { "type": "string", "required": true },
+      "country": { "type": "string", "enum": ["US", "UK"] },
       "zip": { "type": "string" },
       "yearMin": { "type": "integer" },
       "yearMax": { "type": "integer" },

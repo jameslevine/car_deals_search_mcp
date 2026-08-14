@@ -43,6 +43,50 @@ class CarListing {
 }
 
 /**
+ * Parse a displayed price/mileage/year string into a comparable number.
+ * Handles UK formats like "£17,110", "68,148 miles", and Motors.co.uk's "41.2k".
+ */
+function parsePrice(str) {
+    if (!str) return null;
+    const digits = str.replace(/[^\d]/g, '');
+    return digits ? parseInt(digits, 10) : null;
+}
+
+function parseMileage(str) {
+    if (!str) return null;
+    const kMatch = str.match(/([\d.]+)\s*k/i);
+    if (kMatch) return Math.round(parseFloat(kMatch[1]) * 1000);
+    const digits = str.replace(/[^\d]/g, '');
+    return digits ? parseInt(digits, 10) : null;
+}
+
+function parseYear(str) {
+    if (!str) return null;
+    const match = str.match(/(19|20)\d{2}/);
+    return match ? parseInt(match[0], 10) : null;
+}
+
+/**
+ * Apply yearMin/yearMax/priceMax/mileageMax filters client-side, since not every
+ * UK source reliably supports every filter as a URL/search parameter.
+ */
+function applyFilters(rawListings, params) {
+    return rawListings.filter(item => {
+        const year = parseYear(item.year);
+        if (params.yearMin && year && year < params.yearMin) return false;
+        if (params.yearMax && year && year > params.yearMax) return false;
+
+        const price = parsePrice(item.price);
+        if (params.priceMax && price && price > params.priceMax) return false;
+
+        const mileage = parseMileage(item.mileage);
+        if (params.mileageMax && mileage && mileage > params.mileageMax) return false;
+
+        return true;
+    });
+}
+
+/**
  * Launch browser with stealth settings
  */
 async function launchBrowser() {
@@ -406,6 +450,270 @@ async function scrapeKBB(params, maxResults = 20) {
 }
 
 /**
+ * Accept the Sourcepoint/OneTrust-style cookie consent banner if one is shown,
+ * checking both the top-level page and any consent iframe.
+ */
+async function acceptConsent(page, selectors) {
+    try {
+        for (const sel of selectors) {
+            const btn = await page.$(sel);
+            if (btn) {
+                await btn.click();
+                return;
+            }
+        }
+        for (const frame of page.frames()) {
+            for (const sel of selectors) {
+                const btn = await frame.$(sel).catch(() => null);
+                if (btn) {
+                    await btn.click();
+                    return;
+                }
+            }
+        }
+    } catch (err) {
+        // Consent banner not present or already dismissed - safe to continue
+    }
+}
+
+/**
+ * Scrape Autotrader UK for car listings
+ */
+async function scrapeAutotraderUK(params, maxResults = 20) {
+    const listings = [];
+    let browser;
+
+    try {
+        browser = await launchBrowser();
+        const page = await browser.newPage();
+        await page.setViewport({ width: 1920, height: 1080 });
+
+        const postcode = (params.zip || 'SW1A1AA').replace(/\s+/g, '');
+        const urlParams = new URLSearchParams();
+        urlParams.append('postcode', postcode);
+        if (params.make) urlParams.append('make', params.make);
+        if (params.model) urlParams.append('model', params.model);
+        if (params.yearMin) urlParams.append('year-from', params.yearMin);
+        if (params.yearMax) urlParams.append('year-to', params.yearMax);
+        if (params.priceMax) urlParams.append('price-to', params.priceMax);
+        if (params.mileageMax) urlParams.append('maximum-mileage', params.mileageMax);
+
+        const url = `https://www.autotrader.co.uk/car-search?${urlParams.toString()}`;
+
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await new Promise(r => setTimeout(r, 3000));
+        await acceptConsent(page, ['button[title="Accept All"]', 'button[aria-label="Accept All"]']);
+        await new Promise(r => setTimeout(r, 4000));
+
+        const rawListings = await page.evaluate(() => {
+            const results = [];
+            const cards = document.querySelectorAll('[data-testid^="advertCard-"]');
+
+            cards.forEach(card => {
+                const titleEl = card.querySelector('[data-testid="search-listing-title"]');
+                if (!titleEl) return;
+
+                const title = titleEl.childNodes[0] ? titleEl.childNodes[0].textContent.trim() : null;
+                if (!title) return;
+
+                const subtitleEl = card.querySelector('[data-testid="search-listing-subtitle"]');
+                const mileageEl = card.querySelector('[data-testid="mileage"]');
+                const yearEl = card.querySelector('[data-testid="registered_year"]');
+                const locationEl = card.querySelector('[data-testid="search-listing-location"]');
+                const priceMatch = card.innerText.match(/£[\d,]+/);
+
+                results.push({
+                    title: subtitleEl ? `${title} ${subtitleEl.innerText.trim()}` : title,
+                    price: priceMatch ? priceMatch[0] : null,
+                    mileage: mileageEl ? mileageEl.innerText.trim() : null,
+                    year: yearEl ? yearEl.innerText.trim() : null,
+                    location: locationEl ? locationEl.innerText.trim() : null,
+                    href: titleEl.getAttribute('href'),
+                });
+            });
+
+            return results;
+        });
+
+        const filtered = applyFilters(rawListings, params);
+        for (const item of filtered.slice(0, maxResults)) {
+            listings.push(new CarListing({
+                title: item.title,
+                price: item.price,
+                mileage: item.mileage,
+                location: item.location,
+                url: item.href ? `https://www.autotrader.co.uk${item.href}` : null,
+                source: 'Autotrader UK',
+            }));
+        }
+
+        await browser.close();
+    } catch (err) {
+        if (browser) await browser.close();
+        throw new Error(`Autotrader UK scraping failed: ${err.message}`);
+    }
+
+    return listings;
+}
+
+/**
+ * Scrape Motors.co.uk for car listings
+ */
+async function scrapeMotorsUK(params, maxResults = 20) {
+    const listings = [];
+    let browser;
+
+    try {
+        browser = await launchBrowser();
+        const page = await browser.newPage();
+        await page.setViewport({ width: 1920, height: 1080 });
+
+        const postcode = (params.zip || 'SW1A1AA').replace(/\s+/g, '');
+        const urlParams = new URLSearchParams();
+        if (params.make) urlParams.append('make', params.make);
+        if (params.model) urlParams.append('model', params.model);
+        urlParams.append('postcode', postcode);
+        if (params.yearMin) urlParams.append('MinYear', params.yearMin);
+        if (params.yearMax) urlParams.append('MaxYear', params.yearMax);
+        if (params.priceMax) urlParams.append('MaxPrice', params.priceMax);
+
+        const url = `https://www.motors.co.uk/search/car/?${urlParams.toString()}`;
+
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await new Promise(r => setTimeout(r, 3000));
+        await acceptConsent(page, ['#onetrust-accept-btn-handler']);
+        await new Promise(r => setTimeout(r, 4000));
+
+        const rawListings = await page.evaluate(() => {
+            const results = [];
+            const cards = document.querySelectorAll('.result-card');
+
+            cards.forEach(card => {
+                const titleEl = card.querySelector('.result-card__header h3');
+                if (!titleEl) return;
+
+                const title = titleEl.innerText.trim().replace(',', '');
+                const subtitleEl = card.querySelector('.result-card__header h4');
+                const linkEl = card.querySelector('.result-card__link');
+
+                const text = card.innerText;
+                const priceMatch = text.match(/£[\d,]+/);
+                const mileageMatch = text.match(/(\d+(?:\.\d+)?k)\s*\n\s*Miles/i);
+                const distanceMatch = text.match(/\d+\s*miles away/i);
+
+                if (title) {
+                    results.push({
+                        title: subtitleEl ? `${title} ${subtitleEl.innerText.trim()}` : title,
+                        price: priceMatch ? priceMatch[0] : null,
+                        mileage: mileageMatch ? mileageMatch[1] : null,
+                        year: subtitleEl ? subtitleEl.innerText.trim() : null,
+                        location: distanceMatch ? distanceMatch[0] : null,
+                        href: linkEl ? linkEl.getAttribute('href') : null,
+                    });
+                }
+            });
+
+            return results;
+        });
+
+        const filtered = applyFilters(rawListings, params);
+        for (const item of filtered.slice(0, maxResults)) {
+            listings.push(new CarListing({
+                title: item.title,
+                price: item.price,
+                mileage: item.mileage,
+                location: item.location,
+                url: item.href ? `https://www.motors.co.uk${item.href}` : null,
+                source: 'Motors.co.uk',
+            }));
+        }
+
+        await browser.close();
+    } catch (err) {
+        if (browser) await browser.close();
+        throw new Error(`Motors.co.uk scraping failed: ${err.message}`);
+    }
+
+    return listings;
+}
+
+/**
+ * Scrape Cinch (cinch.co.uk) for car listings.
+ * Cinch is a nationwide UK used-car retailer with home delivery, so listings
+ * aren't scoped to a postcode/dealer distance the way the other UK sources are.
+ */
+async function scrapeCinch(params, maxResults = 20) {
+    const listings = [];
+    let browser;
+
+    try {
+        browser = await launchBrowser();
+        const page = await browser.newPage();
+        await page.setViewport({ width: 1920, height: 1080 });
+
+        const slugify = s => s.toLowerCase().trim().replace(/\s+/g, '-');
+        const make = params.make ? slugify(params.make) : '';
+        const model = params.model ? slugify(params.model) : '';
+
+        let url = 'https://www.cinch.co.uk/used-cars';
+        if (make) url += `/${make}`;
+        if (model) url += `/${model}`;
+
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await new Promise(r => setTimeout(r, 5000));
+
+        const rawListings = await page.evaluate(() => {
+            const results = [];
+            const cards = document.querySelectorAll('li:has(a[data-testid="product-list-card-link"])');
+
+            cards.forEach(card => {
+                const linkEl = card.querySelector('a[data-testid="product-list-card-link"]');
+                if (!linkEl) return;
+
+                const lines = card.innerText.split('\n').map(l => l.trim()).filter(Boolean);
+                const title = lines[0] || null;
+                const subtitle = lines[1] || null;
+
+                const findAfter = label => {
+                    const idx = lines.indexOf(label);
+                    return idx >= 0 ? lines[idx + 1] : null;
+                };
+
+                if (title) {
+                    results.push({
+                        title: subtitle ? `${title} ${subtitle}` : title,
+                        price: findAfter('Full price.'),
+                        mileage: findAfter('Mileage,'),
+                        year: findAfter('Vehicle year,'),
+                        href: linkEl.getAttribute('href'),
+                    });
+                }
+            });
+
+            return results;
+        });
+
+        const filtered = applyFilters(rawListings, params);
+        for (const item of filtered.slice(0, maxResults)) {
+            listings.push(new CarListing({
+                title: item.title,
+                price: item.price,
+                mileage: item.mileage,
+                url: item.href ? `https://www.cinch.co.uk${item.href}` : null,
+                source: 'Cinch',
+            }));
+        }
+
+        await browser.close();
+    } catch (err) {
+        if (browser) await browser.close();
+        throw new Error(`Cinch scraping failed: ${err.message}`);
+    }
+
+    return listings;
+}
+
+/**
  * Search all sources and combine results
  */
 async function searchAllSources(params, maxResultsPerSource = 10) {
@@ -447,5 +755,8 @@ module.exports = {
     scrapeCarscom,
     scrapeAutotrader,
     scrapeKBB,
+    scrapeAutotraderUK,
+    scrapeMotorsUK,
+    scrapeCinch,
     searchAllSources
 };

@@ -1,12 +1,12 @@
 {
     "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/registry/main/schemas/server.json",
     "name": "car-deals-mcp",
-    "description": "Search for car deals across Cars.com, Autotrader, and KBB with CarFax filters (1-Owner, No Accidents, Personal Use)",
+    "description": "Search for car deals across Cars.com, Autotrader, and KBB (US) or Autotrader UK, Motors.co.uk, and Cinch (UK), with CarFax filters (1-Owner, No Accidents, Personal Use) for US sources",
     "vendor": {
-        "name": "Your Name",
-        "url": "https://github.com/YOUR_USERNAME"
+        "name": "James Levine",
+        "url": "https://github.com/jameslevine"
     },
-    "sourceUrl": "https://github.com/YOUR_USERNAME/car-deals-mcp",
+    "sourceUrl": "https://github.com/jameslevine/car_deals_search_mcp",
     "license": "MIT",
     "runtime": "node",
     "packages": {
@@ -22,7 +22,7 @@
     "tools": [
         {
             "name": "search_car_deals",
-            "description": "Search for car deals with filters for make, model, price, mileage, and CarFax history (1-Owner, No Accidents, Personal Use)"
+            "description": "Search for car deals in the US or UK, with filters for make, model, price, mileage, and (US only) CarFax history (1-Owner, No Accidents, Personal Use)"
         }
     ],
     "categories": [
@@ -35,6 +35,8 @@
         "deals",
         "carfax",
         "automotive",
-        "shopping"
+        "shopping",
+        "uk",
+        "us"
     ]
 }
