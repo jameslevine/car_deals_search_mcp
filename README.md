@@ -53,8 +53,9 @@ Configure your MCP client (Claude Desktop, VS Code, GitHub Copilot, etc.) to use
 ### Testing Standalone
 
 ```bash
-# Run the test command
+# Run the offline tests, then a live search
 npm test
+npm run smoke
 
 # Or test manually with a specific search (US)
 node -e "
@@ -159,6 +160,30 @@ Toyota Corolla 1.8 VVT-h Icon CVT Euro 6 (s/s) 5dr
 
 ---
 
+## 🔒 Safety
+
+This server follows the own-MCP-server policy in
+[`jameslevine/claude-setup` `rules/mcp-servers.md`](https://github.com/jameslevine/claude-setup/blob/main/rules/mcp-servers.md):
+
+- **Read-only.** `search_car_deals` only fetches public listing pages. It is annotated
+  `readOnlyHint: true`, `destructiveHint: false`, `openWorldHint: true`. There are no write
+  tools. Any added later must be off by default (an explicit opt-in such as `ALLOW_WRITES=1`)
+  and must take a preview plus a one-time confirm token before changing anything.
+- **Scraped text is untrusted data.** Listing fields are cleaned (control, zero-width and
+  bidirectional characters removed, angle brackets defanged, length capped, non-http(s) links
+  dropped). They come back inside an `<untrusted-data>` block with a notice telling the client
+  not to follow any instructions in it.
+- **Arguments are checked** before any page loads (required strings, lengths, whole numbers,
+  `US`/`UK`).
+- **No tokens.** The scrapers need no API keys. If a source ever does, read the key at start-up
+  from the macOS Keychain or 1Password (`op run` with an `.env.tpl`), never from `mcp.json` or
+  arguments.
+
+`npm test` runs these checks (`node --test`, no browser or network). `npm run smoke` runs a live
+Cars.com search.
+
+---
+
 ## 🛠️ Technical Details
 
 - **Scraping**: Puppeteer (headless Chromium) with stealth plugin to bypass bot detection
@@ -185,8 +210,11 @@ export PUPPETEER_EXECUTABLE_PATH="/path/to/chrome"
 ## 🧪 Development & Testing
 
 ```bash
-# Run tests
+# Run tests (offline)
 npm test
+
+# Live search against Cars.com
+npm run smoke
 
 # Test individual scrapers
 node src/scraper.js

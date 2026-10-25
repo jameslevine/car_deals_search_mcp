@@ -21,8 +21,7 @@
     }
   ],
   "permissions": [
-    "network",
-    "filesystem"
+    "network"
   ],
   "tags": ["scraper","cars","mcp","search","uk","us"],
   "schema": {

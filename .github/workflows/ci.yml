@@ -1,0 +1,31 @@
+# CI: offline tests for the MCP server (tool annotations, untrusted-output fence, argument checks).
+# Actions are pinned to full commit SHAs (the tag is in the trailing comment).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (node --test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # The tests never launch a browser, so skip Puppeteer's Chrome download.
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - run: npm ci --no-fund --no-audit
+      - run: npm test
