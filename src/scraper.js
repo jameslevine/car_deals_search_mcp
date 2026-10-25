@@ -1,20 +1,22 @@
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const { cleanField, cleanUrl } = require('./untrusted.js');
 puppeteer.use(StealthPlugin());
 
 /**
- * Car listing data structure
+ * Car listing data structure. Every text field is scraped from a third-party
+ * page, so it is cleaned on the way in (see untrusted.js).
  */
 class CarListing {
     constructor(data) {
-        this.title = data.title || null;
-        this.price = data.price || null;
-        this.mileage = data.mileage || null;
-        this.dealerName = data.dealerName || null;
-        this.location = data.location || null;
-        this.dealRating = data.dealRating || null;
-        this.url = data.url || null;
-        this.source = data.source || null;
+        this.title = cleanField(data.title);
+        this.price = cleanField(data.price);
+        this.mileage = cleanField(data.mileage);
+        this.dealerName = cleanField(data.dealerName);
+        this.location = cleanField(data.location);
+        this.dealRating = cleanField(data.dealRating);
+        this.url = cleanUrl(data.url);
+        this.source = cleanField(data.source);
         // CarFax badges
         this.isOneOwner = data.isOneOwner || false;
         this.noAccidents = data.noAccidents || false;
